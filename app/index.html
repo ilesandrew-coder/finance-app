@@ -21,6 +21,8 @@
   <!-- jsPDF + autoTable (report generation) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+  <!-- pdf-lib (PDF merging for "PDF + Receipts" combined report) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 
   <style>
     /* ---- Reset & Base ---- */
@@ -1393,11 +1395,17 @@
       border: 1px solid var(--gray-300); border-radius: 8px;
       font-size: 0.85rem; background: var(--white); color: var(--gray-600);
     }
+    .report-btn-group { display: flex; gap: 0.4rem; flex-wrap: wrap; }
     .report-generate-btn {
       padding: 0.45rem 1rem; border-radius: 8px; border: none;
       background: var(--blue); color: #fff; font-size: 0.85rem;
       font-weight: 600; cursor: pointer; white-space: nowrap;
     }
+    .report-generate-btn--attach {
+      background: var(--white); color: var(--blue);
+      border: 1.5px solid var(--blue) !important;
+    }
+    .report-generate-btn--attach:hover { background: var(--blue-lt); }
     .report-generate-btn:disabled { opacity: 0.5; cursor: default; }
     .report-note {
       font-size: 0.75rem; color: var(--gray-400); margin: 0.75rem 0 0; line-height: 1.5;
@@ -1444,6 +1452,11 @@
       border: none; border-radius: 8px; font-size: 0.82rem;
       font-weight: 700; cursor: pointer; white-space: nowrap;
     }
+    .rprep-gen-btn--attach {
+      background: var(--white); color: var(--blue);
+      border: 1.5px solid var(--blue) !important;
+    }
+    .rprep-gen-btn--attach:hover { background: var(--blue-lt); }
     .rprep-gen-btn:disabled { opacity: 0.5; cursor: default; }
     .rprep-body { flex: 1; overflow-y: auto; padding: 0.875rem 1rem; }
     .rprep-hint {
@@ -2081,9 +2094,14 @@
           <select id="report-biz-quarter" onchange="updateReportBadge('biz')">
             <option value="">Select quarter…</option>
           </select>
-          <button class="report-generate-btn" id="report-biz-btn" onclick="generateBusinessReport()">
-            ↓ Generate PDF
-          </button>
+          <div class="report-btn-group">
+            <button class="report-generate-btn" id="report-biz-btn" onclick="generateBusinessReport()">
+              ↓ Generate PDF
+            </button>
+            <button class="report-generate-btn report-generate-btn--attach" id="report-biz-btn-attach" onclick="generateReportWithAttachments('biz')">
+              ↓ PDF + Receipts
+            </button>
+          </div>
         </div>
         <div id="report-biz-badge" style="display:none">
           <span class="report-tx-badge empty" id="report-biz-badge-chip"></span>
@@ -2106,9 +2124,14 @@
           <select id="report-fl3xx-month" onchange="updateReportBadge('fl3xx')">
             <option value="">Select month…</option>
           </select>
-          <button class="report-generate-btn" id="report-fl3xx-btn" onclick="generateFl3xxReport()">
-            ↓ Generate PDF
-          </button>
+          <div class="report-btn-group">
+            <button class="report-generate-btn" id="report-fl3xx-btn" onclick="generateFl3xxReport()">
+              ↓ Generate PDF
+            </button>
+            <button class="report-generate-btn report-generate-btn--attach" id="report-fl3xx-btn-attach" onclick="generateReportWithAttachments('fl3xx')">
+              ↓ PDF + Receipts
+            </button>
+          </div>
         </div>
         <div id="report-fl3xx-badge" style="display:none">
           <span class="report-tx-badge empty" id="report-fl3xx-badge-chip"></span>
@@ -2116,11 +2139,6 @@
             ✏️ Review &amp; edit descriptions
           </button>
         </div>
-        <p class="report-note">
-          Generates the transaction table. For the <strong>combined PDF with receipts appended</strong>,
-          run <code>generate_fl3xx_report.py</code> from Terminal after generating this table —
-          it pulls the same data from Supabase and merges the receipts automatically.
-        </p>
       </div>
 
     </div>
@@ -2133,7 +2151,8 @@
   <div class="rprep-topbar">
     <button class="rprep-back" onclick="closePrepareReportDesc()">← Reports</button>
     <div class="rprep-title" id="rprep-title">Prepare descriptions</div>
-    <button class="rprep-gen-btn" id="rprep-gen-btn" onclick="saveAndGenerateReport()">↓ Generate PDF</button>
+    <button class="rprep-gen-btn rprep-gen-btn--attach" id="rprep-gen-btn-attach" onclick="saveAndGenerateReport(true)">↓ PDF + Receipts</button>
+    <button class="rprep-gen-btn" id="rprep-gen-btn" onclick="saveAndGenerateReport(false)">↓ Generate PDF</button>
   </div>
   <div class="rprep-body" id="rprep-body"></div>
 </div>
@@ -4102,6 +4121,8 @@ function buildReportDoc({ title, subtitle, period, rows, columns, total, txCount
 
   doc.autoTable({
     startY: 26,
+    margin: { top: 26, bottom: 18 },
+    rowPageBreak: 'avoid',
     head:    [columns.map(c => c.header)],
     body:    [...rows, totalRow],
     columns: columns.map(c => ({ dataKey: c.key })),
@@ -4157,91 +4178,191 @@ function reportDesc(t) {
   return (t.report_description && t.report_description.trim()) ? t.report_description.trim() : t.description;
 }
 
+// ---- Report — shared data builder ---------------------------
+// Returns { doc, filename, txs } for the given report type, or null on validation failure.
+function _getReportData(type) {
+  if (type === 'biz') {
+    const quarter = document.getElementById('report-biz-quarter').value;
+    if (!quarter) { showToast('Select a quarter first', 3000); return null; }
+    const txs = allTx
+      .filter(t => t.business_flag && getTxQuarterKey(t.date) === quarter)
+      .sort((a, b) => a.date.localeCompare(b.date));
+    if (!txs.length) { showToast('No Business transactions in that quarter', 3000); return null; }
+    const total   = txs.reduce((s, t) => s + Math.abs(t.amount), 0).toFixed(2);
+    const columns = [
+      { key: 'date',     header: 'Date',        width: 22 },
+      { key: 'desc',     header: 'Description', width: 110 },
+      { key: 'category', header: 'Category',    width: 40 },
+      { key: 'amount',   header: 'Amount (€)',  width: 25, align: 'right' },
+      { key: 'receipt',  header: 'Receipt',     width: 70 },
+    ];
+    const rows = txs.map(t => ({
+      date:        t.date,
+      desc:        reportDesc(t),
+      category:    t.category || '—',
+      amount:      Math.abs(t.amount).toFixed(2),
+      receipt:     t.receipt_url ? 'View receipt ↗' : '',
+      _receiptUrl: t.receipt_url || null,
+    }));
+    const doc = buildReportDoc({
+      title: 'Business Expenses Report', subtitle: 'Andrew Iles',
+      period: getQuarterLabel(quarter), columns, rows, total, txCount: txs.length,
+    });
+    return { doc, filename: `Business_Report_${quarter}.pdf`, txs };
+
+  } else {
+    const month = document.getElementById('report-fl3xx-month').value;
+    if (!month) { showToast('Select a month first', 3000); return null; }
+    const [y, m] = month.split('-');
+    const monthLabel = new Date(+y, +m - 1, 1).toLocaleString('default', { month: 'long', year: 'numeric' });
+    const txs = allTx
+      .filter(t => t.fl3xx_flag && t.date.startsWith(month))
+      .sort((a, b) => a.date.localeCompare(b.date));
+    if (!txs.length) { showToast('No FL3XX transactions in that month', 3000); return null; }
+    const total   = txs.reduce((s, t) => s + Math.abs(t.amount), 0).toFixed(2);
+    const columns = [
+      { key: 'date',    header: 'Date',        width: 22 },
+      { key: 'desc',    header: 'Description', width: 120 },
+      { key: 'amount',  header: 'Amount (€)',  width: 25, align: 'right' },
+      { key: 'receipt', header: 'Receipt',     width: 100 },
+    ];
+    const rows = txs.map(t => ({
+      date:        t.date,
+      desc:        reportDesc(t),
+      amount:      Math.abs(t.amount).toFixed(2),
+      receipt:     t.receipt_url ? 'View receipt ↗' : '',
+      _receiptUrl: t.receipt_url || null,
+    }));
+    const doc = buildReportDoc({
+      title: 'FL3XX Expenses Report', subtitle: 'Andrew Iles',
+      period: monthLabel, columns, rows, total, txCount: txs.length,
+    });
+    return { doc, filename: `FL3XX_Report_${month}.pdf`, txs };
+  }
+}
+
 function generateBusinessReport() {
-  const quarter = document.getElementById('report-biz-quarter').value;
-  if (!quarter) { showToast('Select a quarter first', 3000); return; }
-
-  const txs = allTx
-    .filter(t => t.business_flag && getTxQuarterKey(t.date) === quarter)
-    .sort((a, b) => a.date.localeCompare(b.date));
-
-  if (!txs.length) { showToast('No Business transactions in that quarter', 3000); return; }
-
-  const acctName = (id) => (accounts.find(a => a.id === id)?.name || '—');
-  const total    = txs.reduce((s, t) => s + Math.abs(t.amount), 0).toFixed(2);
-
-  const columns = [
-    { key: 'date',     header: 'Date',        width: 22 },
-    { key: 'desc',     header: 'Description', width: 80 },
-    { key: 'account',  header: 'Account',     width: 38 },
-    { key: 'category', header: 'Category',    width: 35 },
-    { key: 'amount',   header: 'Amount (€)',  width: 22, align: 'right' },
-    { key: 'receipt',  header: 'Receipt',     width: 60 },
-  ];
-
-  const rows = txs.map(t => ({
-    date:        t.date,
-    desc:        reportDesc(t),
-    account:     acctName(t.account_id),
-    category:    t.category || '—',
-    amount:      Math.abs(t.amount).toFixed(2),
-    receipt:     t.receipt_url ? 'View receipt ↗' : '',
-    _receiptUrl: t.receipt_url || null,
-  }));
-
-  const doc = buildReportDoc({
-    title:   'Business Expenses Report',
-    subtitle: 'Andrew Iles',
-    period:   getQuarterLabel(quarter),
-    columns, rows, total, txCount: txs.length,
-  });
-
-  doc.save(`Business_Report_${quarter}.pdf`);
+  const data = _getReportData('biz');
+  if (!data) return;
+  data.doc.save(data.filename);
   showToast('✓ Business report downloaded');
 }
 
 function generateFl3xxReport() {
-  const month = document.getElementById('report-fl3xx-month').value;
-  if (!month) { showToast('Select a month first', 3000); return; }
-
-  const [y, m] = month.split('-');
-  const monthLabel = new Date(+y, +m - 1, 1).toLocaleString('default', { month: 'long', year: 'numeric' });
-
-  const txs = allTx
-    .filter(t => t.fl3xx_flag && t.date.startsWith(month))
-    .sort((a, b) => a.date.localeCompare(b.date));
-
-  if (!txs.length) { showToast('No FL3XX transactions in that month', 3000); return; }
-
-  const acctName = (id) => (accounts.find(a => a.id === id)?.name || '—');
-  const total    = txs.reduce((s, t) => s + Math.abs(t.amount), 0).toFixed(2);
-
-  const columns = [
-    { key: 'date',    header: 'Date',        width: 22 },
-    { key: 'desc',    header: 'Description', width: 90 },
-    { key: 'account', header: 'Account',     width: 38 },
-    { key: 'amount',  header: 'Amount (€)',  width: 22, align: 'right' },
-    { key: 'receipt', header: 'Receipt',     width: 70 },
-  ];
-
-  const rows = txs.map(t => ({
-    date:        t.date,
-    desc:        reportDesc(t),
-    account:     acctName(t.account_id),
-    amount:      Math.abs(t.amount).toFixed(2),
-    receipt:     t.receipt_url ? 'View receipt ↗' : '',
-    _receiptUrl: t.receipt_url || null,
-  }));
-
-  const doc = buildReportDoc({
-    title:   'FL3XX Expenses Report',
-    subtitle: 'Andrew Iles',
-    period:   monthLabel,
-    columns, rows, total, txCount: txs.length,
-  });
-
-  doc.save(`FL3XX_Report_${month}.pdf`);
+  const data = _getReportData('fl3xx');
+  if (!data) return;
+  data.doc.save(data.filename);
   showToast('✓ FL3XX report downloaded');
+}
+
+// Extract Google Drive file ID from a Drive viewer URL
+function extractDriveFileId(url) {
+  const m = url && url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : null;
+}
+
+// Generate a combined PDF: report cover page(s) + all receipt attachments appended in order
+async function generateReportWithAttachments(type) {
+  const data = _getReportData(type);
+  if (!data) return;
+
+  const { doc, filename, txs } = data;
+  const txsWithReceipts = txs.filter(t => t.receipt_url);
+
+  if (!txsWithReceipts.length) {
+    doc.save(filename);
+    showToast('✓ Report downloaded (no receipts attached)');
+    return;
+  }
+
+  // Require Drive token to download receipt files
+  let token;
+  try {
+    token = await getDriveToken();
+  } catch (e) {
+    showToast('Connect Google Drive first (☁️) to include receipts', 5000);
+    return;
+  }
+
+  showToast(`⏳ Merging ${txsWithReceipts.length} receipt${txsWithReceipts.length !== 1 ? 's' : ''}…`, 10000);
+
+  try {
+    const { PDFDocument } = PDFLib;
+
+    // Load the jsPDF-generated report into pdf-lib
+    const reportBytes = doc.output('arraybuffer');
+    const mergedPdf   = await PDFDocument.load(reportBytes);
+
+    let merged = 0;
+    for (const tx of txsWithReceipts) {
+      const fileId = extractDriveFileId(tx.receipt_url);
+      if (!fileId) continue;
+
+      try {
+        // Fetch MIME type from Drive API
+        const metaRes = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${fileId}?fields=mimeType`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (!metaRes.ok) continue;
+        const { mimeType } = await metaRes.json();
+
+        // Download raw file bytes
+        const fileRes = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (!fileRes.ok) continue;
+        const bytes = await fileRes.arrayBuffer();
+
+        if (mimeType === 'application/pdf') {
+          const receiptPdf = await PDFDocument.load(bytes);
+          const pages = await mergedPdf.copyPages(receiptPdf, receiptPdf.getPageIndices());
+          pages.forEach(p => mergedPdf.addPage(p));
+          merged++;
+        } else if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
+          const img  = await mergedPdf.embedJpg(bytes);
+          const page = mergedPdf.addPage([842, 595]); // A4 landscape in pts
+          const { width, height } = img.scaleToFit(page.getWidth() - 60, page.getHeight() - 60);
+          page.drawImage(img, {
+            x: (page.getWidth()  - width)  / 2,
+            y: (page.getHeight() - height) / 2,
+            width, height,
+          });
+          merged++;
+        } else if (mimeType === 'image/png') {
+          const img  = await mergedPdf.embedPng(bytes);
+          const page = mergedPdf.addPage([842, 595]);
+          const { width, height } = img.scaleToFit(page.getWidth() - 60, page.getHeight() - 60);
+          page.drawImage(img, {
+            x: (page.getWidth()  - width)  / 2,
+            y: (page.getHeight() - height) / 2,
+            width, height,
+          });
+          merged++;
+        }
+        // Unsupported formats (HEIC etc.) are silently skipped
+      } catch (e) {
+        console.warn(`Could not merge receipt for tx ${tx.id}:`, e);
+      }
+    }
+
+    const finalBytes = await mergedPdf.save();
+    const blob = new Blob([finalBytes], { type: 'application/pdf' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = filename.replace('.pdf', '_with_receipts.pdf');
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 15000);
+
+    showToast(`✓ Report + ${merged} receipt${merged !== 1 ? 's' : ''} downloaded`);
+  } catch (e) {
+    console.error('PDF merge failed:', e);
+    showToast('⚠ Could not merge receipts — try Generate PDF instead', 5000);
+  }
 }
 
 // ---- Report — Prepare descriptions overlay ------------------
@@ -4377,7 +4498,7 @@ async function autoSaveReportDesc(textarea) {
 }
 
 // Generate PDF — descriptions are already auto-saved on blur, so just generate
-function saveAndGenerateReport() {
+function saveAndGenerateReport(withAttachments = false) {
   const type = _rprepType;
   // Trigger blur on any focused textarea so its auto-save fires before we close
   if (document.activeElement && document.activeElement.classList.contains('rprep-desc-input')) {
@@ -4385,8 +4506,13 @@ function saveAndGenerateReport() {
   }
   closePrepareReportDesc();
   updateReportBadge(type);
-  if (type === 'biz') generateBusinessReport();
-  else                generateFl3xxReport();
+  if (withAttachments) {
+    generateReportWithAttachments(type);
+  } else if (type === 'biz') {
+    generateBusinessReport();
+  } else {
+    generateFl3xxReport();
+  }
 }
 
 // ---- Keyword extraction -------------------------------------
