@@ -1,0 +1,54 @@
+# ── Credentials & secrets ─────────────────────────────────────────
+.cloudflare
+supabase/.env
+supabase/drive_credentials.json
+supabase/*.token
+supabase/token.json
+.github_pat
+
+# ── Transaction data & old exports ────────────────────────────────
+*.csv
+*.numbers
+*.xlsx
+*.xls
+BOV_Dashboard.html
+Bank_Transactions.*
+last_import_dates.json
+
+# ── Local scripts superseded by GitHub Actions ────────────────────
+deploy.sh
+/wrangler.toml
+Regenerate\ Dashboard.command
+regenerate_dashboard.py
+
+# ── Wrangler cache ────────────────────────────────────────────────
+.wrangler/
+app/.wrangler/
+
+# ── Dev/design artifacts ──────────────────────────────────────────
+*_mockup.html
+*_Mockup.html
+mockup_*.html
+M9_Mockup.html
+UX_Review_Mockups.html
+Add_Category_Mockup.html
+tags_mockup.html
+report_description_mockup.html
+budget_mockup.html
+
+# ── macOS / Claude artifacts ──────────────────────────────────────
+*.app
+*.command
+*.skill
+.DS_Store
+.claude/
+*.png
+icon_option*.png
+BOV\ Import\ Icon.png
+bov_categories_REPLACED.json
+Hosting/
+seed.py
+
+# ── Node ──────────────────────────────────────────────────────────
+node_modules/
+.npm/
