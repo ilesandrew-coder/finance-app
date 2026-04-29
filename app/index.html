@@ -5741,7 +5741,10 @@ async function connectDrive() {
 // Results are cached so repeated calls in one session don't hit the API.
 async function getDriveFolderID(folderPath) {
   if (gDriveFolderCache[folderPath]) return gDriveFolderCache[folderPath];
-  const token  = await getDriveToken();
+  // Use the cached token directly — never attempt a popup from async context.
+  // If the token expired, fail fast with a clear message.
+  const token = gDriveToken;
+  if (!token) throw new Error('Drive token expired — tap ☁️ Drive to reconnect, then try again.');
   const parts  = folderPath.split('/').filter(Boolean);
   let parentId = 'root';
 
@@ -5797,7 +5800,10 @@ function getQuarterFolderPath(dateStr) {
 // Upload a File object to the correct Drive folder for the given transaction.
 // Returns { id, webViewLink } from the Drive API.
 async function uploadReceiptToDrive(file, tx) {
-  const token = await getDriveToken();
+  // Use cached token directly — never attempt a re-auth popup from async context.
+  const token = gDriveToken;
+  if (!token) throw new Error('Drive token expired — tap ☁️ Drive to reconnect, then try again.');
+
   // Business flag takes precedence for folder routing (no file duplication)
   const folderPath = tx.business_flag
     ? getQuarterFolderPath(tx.date)
@@ -5815,10 +5821,22 @@ async function uploadReceiptToDrive(file, tx) {
   form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
   form.append('file', file);
 
-  const res = await fetch(
-    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',
-    { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form }
-  );
+  // Abort after 60 s — prevents an indefinite hang if the network stalls mid-upload
+  const controller = new AbortController();
+  const uploadTimeout = setTimeout(() => controller.abort(), 60000);
+  let res;
+  try {
+    res = await fetch(
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',
+      { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form, signal: controller.signal }
+    );
+  } catch (fetchErr) {
+    if (fetchErr.name === 'AbortError') throw new Error('Upload timed out after 60 s — check your connection and try again.');
+    throw fetchErr;
+  } finally {
+    clearTimeout(uploadTimeout);
+  }
+
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error?.message || `Drive upload failed (${res.status})`);
@@ -5863,13 +5881,10 @@ function attachReceipt(txId) {
 
     try {
       const driveResult = await uploadReceiptToDrive(file, tx);
-      // webViewLink is only populated for Google-native files; fall back to
-      // constructing the standard Drive viewer URL from the file ID.
-      const receiptUrl = driveResult.webViewLink
+      const receiptUrl  = driveResult.webViewLink
         || `https://drive.google.com/file/d/${driveResult.id}/view`;
 
-      // Save URL in Supabase — use .select('id') so we detect silent RLS/missing-column blocks
-      // (Supabase returns error:null but empty data when an UPDATE affects 0 rows)
+      // Save URL in Supabase — use .select('id') to detect silent RLS blocks
       const { data: updated, error } = await sb.from('transactions')
         .update({ receipt_url: receiptUrl })
         .eq('id', txId)
@@ -5884,18 +5899,18 @@ function attachReceipt(txId) {
         throw new Error('Receipt URL not saved — database update returned no rows (check RLS policies)');
       }
 
-      // Update local state
       const idx = allTx.findIndex(t => String(t.id) === String(txId));
       if (idx !== -1) allTx[idx] = { ...allTx[idx], receipt_url: receiptUrl };
 
-      reRenderAfterFlagChange();
       showToast('✓ Receipt uploaded and linked');
     } catch (err) {
-      // Always re-render so the UI recovers even if btn is detached
+      showToast(`Upload failed: ${err.message}`, 8000);
+    } finally {
+      // Always re-render and reset the button — covers both success and every
+      // error path, including network timeouts and token-expiry fast-fails.
       reRenderAfterFlagChange();
       const freshBtn = document.querySelector(`[data-receipt-txid="${txId}"]`);
       if (freshBtn) { freshBtn.textContent = '📎 Attach receipt'; freshBtn.classList.remove('uploading'); freshBtn.disabled = false; }
-      showToast(`Upload failed: ${err.message}`, 8000);
     }
   };
   input.click();
@@ -5946,8 +5961,8 @@ function replaceReceipt(txId) {
     if (chip) { chip.textContent = '⏳ Uploading…'; chip.disabled = true; }
 
     try {
-      const driveResult  = await uploadReceiptToDrive(file, tx);
-      const receiptUrl   = driveResult.webViewLink || `https://drive.google.com/file/d/${driveResult.id}/view`;
+      const driveResult = await uploadReceiptToDrive(file, tx);
+      const receiptUrl  = driveResult.webViewLink || `https://drive.google.com/file/d/${driveResult.id}/view`;
 
       const { data: updated, error } = await sb.from('transactions')
         .update({ receipt_url: receiptUrl })
@@ -5959,11 +5974,11 @@ function replaceReceipt(txId) {
       const idx = allTx.findIndex(t => String(t.id) === String(txId));
       if (idx !== -1) allTx[idx] = { ...allTx[idx], receipt_url: receiptUrl };
 
-      reRenderAfterFlagChange();
       showToast('✓ Receipt replaced');
     } catch (err) {
-      reRenderAfterFlagChange();
       showToast(`Replace failed: ${err.message}`, 8000);
+    } finally {
+      reRenderAfterFlagChange();
     }
   };
 
