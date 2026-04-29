@@ -1,6 +1,6 @@
 # Family Finance App — Product Specification
 
-**Version:** 1.5
+**Version:** 1.6
 **Last updated:** 2026-04-28
 **Status:** Active development — M12 complete; PWA v1 deployed
 
@@ -266,12 +266,14 @@ There is no need to manually upload anything to Google Drive beforehand. The app
 5. The user selects the receipt from wherever it currently lives: camera roll, Downloads folder, a PDF saved from email, or a photo taken on the spot
 6. On first use per session, a Google sign-in popup appears; the user approves Drive access once
 7. The app automatically determines the correct destination folder from the B/F flag combination (see routing table in §4.8), creates the folder in Drive if it doesn't exist yet, and uploads the file with a clean sortable filename (`YYYY-MM-DD_description_amount.ext`)
-8. The Drive URL is saved in Supabase against the transaction; the 📎 button changes to a green **📎 Receipt ↗** link
+8. The Drive URL is saved in Supabase against the transaction; the 📎 button changes to a green **📎 Receipt ↗** chip
 9. The outstanding-receipts counter in the header decrements; when all flagged transactions have receipts it disappears
 
 **Receipt sources supported:** photo taken on phone, image or PDF saved from email, downloaded file from a supplier website, scanned physical copy.
 
 **No duplication:** when a transaction has both B = Y and F = Y, the file is uploaded once to the Business quarterly folder; that same Drive URL covers both flags.
+
+**Replacing or removing a receipt (M14):** tapping the green **📎 Receipt ↗** chip opens an inline action sheet with three options: View receipt (opens Drive), Replace receipt (upload new file — follows same folder/naming logic as the original upload), Remove receipt (two-step confirm before clearing). Tapping anywhere outside the menu closes it.
 
 ### 5.4 Business Report
 
@@ -384,6 +386,7 @@ BOV eBanking (browser)
 | M11 | Tags | Cross-cutting transaction labels for trip/project/event spend tracking. Tags tab, bulk-tag modal, tag detail view with category donut + person split, tag chips on transactions, tag filter. See §4.10. |
 | M12 | Report improvements | `report_description` field on transactions; Prepare descriptions overlay in Reports tab; PDF total as table row; receipt column as clickable link; report titles no longer prefixed with "Family Finance —"; receipt Drive links fixed (files now shared as "anyone with link"); tag save freeze fixed. |
 | M13 | PDF + Receipts merge | "↓ PDF + Receipts" button on both report cards and overlay — downloads a single PDF with the report table as the cover + all receipt attachments appended in date order (PDF receipts merged natively, image receipts embedded as landscape pages). Account column removed from both reports. Total row cropping fixed (margin + rowPageBreak). |
+| M14 | Receipt replace/remove | Tapping the receipt chip opens an inline action sheet: View (Drive), Replace (new upload), Remove (two-step confirm). Closes on outside tap. |
 
 ---
 
