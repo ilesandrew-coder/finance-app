@@ -1,6 +1,6 @@
 # Family Finance App — Product Specification
 
-**Version:** 1.6
+**Version:** 1.7
 **Last updated:** 2026-04-28
 **Status:** Active development — M12 complete; PWA v1 deployed
 
@@ -387,6 +387,7 @@ BOV eBanking (browser)
 | M12 | Report improvements | `report_description` field on transactions; Prepare descriptions overlay in Reports tab; PDF total as table row; receipt column as clickable link; report titles no longer prefixed with "Family Finance —"; receipt Drive links fixed (files now shared as "anyone with link"); tag save freeze fixed. |
 | M13 | PDF + Receipts merge | "↓ PDF + Receipts" button on both report cards and overlay — downloads a single PDF with the report table as the cover + all receipt attachments appended in date order (PDF receipts merged natively, image receipts embedded as landscape pages). Account column removed from both reports. Total row cropping fixed (margin + rowPageBreak). |
 | M14 | Receipt replace/remove | Tapping the receipt chip opens an inline action sheet: View (Drive), Replace (new upload), Remove (two-step confirm). Closes on outside tap. |
+| M15 | Spend filter chip | When a category filter is active in the Spend tab, a dismissible chip appears next to the "Spend by Category" title showing the active category. Tapping × clears `globalCatFilter`, resets the dropdown in the Transactions tab, and re-renders the donut and monthly chart. |
 
 ---
 

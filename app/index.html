@@ -468,6 +468,24 @@
     .cat-name { display: flex; align-items: center; }
     #spending-table tbody tr:hover { background: var(--gray-50); }
     #spending-table tbody tr:active { background: var(--gray-100); }
+    .spend-cat-header { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+    .spend-cat-header .section-title { margin-bottom: 0; }
+    .spend-filter-chip {
+      display: inline-flex; align-items: center; gap: 5px;
+      background: #dbeafe; color: #1e40af;
+      border-radius: 20px; padding: 3px 8px 3px 10px;
+      font-size: 0.72rem; font-weight: 600;
+      border: none; cursor: pointer;
+      max-width: 180px; /* truncate very long category names */
+    }
+    .spend-filter-chip:active { background: #bfdbfe; }
+    .spend-filter-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .spend-filter-chip-x {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 15px; height: 15px; border-radius: 50%;
+      background: #bfdbfe; font-size: 11px; font-weight: 700;
+      flex-shrink: 0; line-height: 1;
+    }
 
     /* ---- Totals strip ---- */
     .totals-strip { display: flex; align-items: center; gap: 0.25rem; margin-bottom: 1rem; }
@@ -2004,7 +2022,13 @@
     </div>
 
     <div class="card">
-      <p class="section-title">Spend by Category</p>
+      <div class="spend-cat-header">
+        <p class="section-title">Spend by Category</p>
+        <button class="spend-filter-chip" id="spend-filter-chip" style="display:none" onclick="clearSpendFilter()">
+          <span class="spend-filter-chip-name" id="spend-filter-chip-name"></span>
+          <span class="spend-filter-chip-x">×</span>
+        </button>
+      </div>
       <div class="chart-wrap">
         <canvas id="spending-donut"></canvas>
         <div class="chart-center">
@@ -3398,6 +3422,18 @@ function renderDashboardDonut() {
 
 // ---- Spending donut -----------------------------------------
 function renderSpendingDonut() {
+  // Show/hide the active category filter chip
+  const chip     = document.getElementById('spend-filter-chip');
+  const chipName = document.getElementById('spend-filter-chip-name');
+  if (chip && chipName) {
+    if (globalCatFilter !== 'all') {
+      chipName.textContent  = globalCatFilter;
+      chip.style.display    = 'inline-flex';
+    } else {
+      chip.style.display    = 'none';
+    }
+  }
+
   const filtered = applyGlobalFilter(spendTx(sharedPeriodTxs()));
   const cats     = byCategory(filtered);
   const total    = cats.reduce((s,[,v]) => s+v, 0);
@@ -4080,6 +4116,15 @@ function switchTab(tab) {
   }
   if (tab === 'inbox')   renderInbox();
   if (tab === 'reports') renderReports();
+}
+
+// Clear the category filter from the Spend tab chip
+function clearSpendFilter() {
+  globalCatFilter = 'all';
+  const catSel = document.getElementById('global-cat-filter');
+  if (catSel) catSel.value = 'all';
+  renderSpendingDonut();
+  renderMonthlyChart();
 }
 
 // Toggle the global B/F flag filter. Tapping the active chip turns it off.
