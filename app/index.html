@@ -6364,7 +6364,7 @@ function renderTxTagChip(t) {
 // Simple tag picker for individual transaction (reuse bulk modal as a quick picker)
 function openTxTagPicker(txId) {
   // Build a small inline select prompt via a quick-modal approach
-  const tag = allTx.find(t=>t.id===txId)?.tag_id;
+  const tag = allTx.find(t=>String(t.id)===String(txId))?.tag_id;
   const current = tag ? tagById(tag) : null;
   const options = [
     `<option value="">— no tag —</option>`,
@@ -6593,7 +6593,7 @@ async function setTxTag(txId, tagId) {
   const val = tagId || null;
   const { error } = await sb.from('transactions').update({ tag_id: val }).eq('id', txId);
   if (error) { showToast('⚠ Could not save tag'); throw error; }
-  const tx = allTx.find(t=>t.id===txId);
+  const tx = allTx.find(t=>String(t.id)===String(txId));
   if (tx) tx.tag_id = val;
   // Targeted re-render — avoid heavy renderAll() for a single tag change
   if (activeTab === 'transactions') renderTransactions();
